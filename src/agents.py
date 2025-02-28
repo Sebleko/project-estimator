@@ -3,14 +3,16 @@ from typing import Any, Dict
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_openai import ChatOpenAI
-from langgraph.graph import StateGraph
-from langgraph.types import interrupt
+from langgraph.graph import StateGraph, END
+from langgraph.types import interrupt, Command
 import tiktoken
+from langgraph.checkpoint.memory import MemorySaver
+
 
 from state import State, save_design_snapshot, increment_iteration, log_error
 
 # Import the new prompts
-from .prompts import (
+from prompts import (
     requirements_and_stories_prompt,
     question_answer_integration_prompt,
     initial_system_design_prompt,
@@ -22,7 +24,7 @@ from .prompts import (
 )
 
 # Import the new schemas
-from .schemas import (
+from schemas import (
     RequirementsAndStoriesOutput,
     IntegratedRequirementsAndStoriesOutput,
     InitialSystemDesignOutput,
@@ -97,7 +99,7 @@ async def integrate_customer_answers(state: State) -> State:
         if not questions:
             raise ValueError("No clarification questions to integrate")
         
-        answer_by_question = interrupt({"questions": questions})
+        answer_by_question = interrupt({ "interrupt_type": "questions", "questions": questions})
         if not answer_by_question.values():
             raise ValueError("No answers provided for clarification questions")
         
@@ -262,7 +264,7 @@ async def improve_system(state: State) -> State:
         for i, story in enumerate(state.user_stories):
             story_text = story.formatted()
             validation = state.story_validations.get(story_text)
-            if validation:
+            if validation: #and not validation.is_satisfied:
                 validations_text += f"User Story {i+1}: {story_text}\n"
                 validations_text += f"Satisfied: {validation.is_satisfied}\n"
                 validations_text += f"Strengths: {', '.join(validation.strengths)}\n"
@@ -271,7 +273,7 @@ async def improve_system(state: State) -> State:
                 validations_text += f"Assessment: {validation.assessment_summary}\n\n"
         
         # Format component descriptions
-        component_descriptions = "\n\n".join([f"{c.name}:\n{c.description}" for c in state.components])
+        component_descriptions = "\n\n".join([f"{c.name}:\n{c.description} {c.technologies}" for c in state.components])
         
         input_data = {
             "system_description": state.system_description,
@@ -440,7 +442,7 @@ def check_system_improvement_loop(state: State) -> str:
     
     # After improvement, if architect recommends more improvements and we haven't hit limit
     if (state.needs_further_refinement and 
-        state.iterations["system_improvement"] < 3):
+        state.iterations["system_improvement"] < 10):
         return "improve_system"  # Continue improving
     else:
         return "validate_stories"  # Validate to see if improvements fixed the issues
@@ -490,7 +492,7 @@ def build_architecture_design_graph():
         {
             "clarification": "integrate_answers",
             "initial_design": "initial_design",
-            "end": None  # Terminal state
+            "end": END  # Terminal state
         }
     )
     
@@ -499,7 +501,7 @@ def build_architecture_design_graph():
         lambda state: "end" if state.error_log else "initial_design",
         {
             "initial_design": "initial_design",
-            "end": None
+            "end": END
         }
     )
     
@@ -508,7 +510,7 @@ def build_architecture_design_graph():
         lambda state: "end" if state.error_log else "refine_components",
         {
             "refine_components": "refine_components",
-            "end": None
+            "end": END
         }
     )
     
@@ -518,7 +520,7 @@ def build_architecture_design_graph():
         {
             "refine_components": "refine_components",
             "validate_stories": "validate_stories",
-            "end": None
+            "end": END
         }
     )
     
@@ -528,7 +530,7 @@ def build_architecture_design_graph():
         {
             "improve_system": "improve_system",
             "final_assessment": "final_assessment",
-            "end": None
+            "end": END
         }
     )
     
@@ -538,7 +540,7 @@ def build_architecture_design_graph():
         {
             "improve_system": "improve_system",
             "validate_stories": "validate_stories",
-            "end": None
+            "end": END
         }
     )
     
@@ -547,7 +549,7 @@ def build_architecture_design_graph():
         check_architecture_outcome,
         {
             "refine_architecture": "refine_architecture",
-            "end": None
+            "end": END
         }
     )
     
@@ -557,7 +559,7 @@ def build_architecture_design_graph():
         {
             "improve_system": "improve_system", 
             "final_assessment": "final_assessment",
-            "end": None
+            "end": END
         }
     )
     
@@ -586,10 +588,31 @@ async def design_system_architecture(project_description: str, questions_and_ans
     
     # Build and compile the workflow
     workflow = build_architecture_design_graph()
+    thread_config = {"configurable": {"thread_id": "1"}}
+    checkpointer = MemorySaver()
+    app = workflow.compile(checkpointer=checkpointer)
     
     # Execute the workflow
     try:
-        final_state = await workflow.ainvoke(initial_state)
+        result = await app.ainvoke(initial_state, config=thread_config)
+        state = app.get_state(thread_config)
+        tasks = state.tasks[0].interrupts[0].value
+
+        final_state = None
+
+        if tasks["interrupt_type"] == "questions":
+            answers = {}
+            for question in tasks["questions"]:
+                print(f"Question: {question}")
+                answer = input("Answer: ")
+                answers[question] = answer
+
+            final_state = await app.ainvoke(Command(resume=answer), config=thread_config)
+        else:
+            final_state = result
+        
+
+
         return final_state
     except Exception as e:
         # Handle any top-level errors

@@ -1,6 +1,6 @@
+
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
-from langgraph import State as LanggraphState
 from schemas import (
     UserStory,
     Component,
@@ -8,7 +8,7 @@ from schemas import (
     ArchitectureAssessmentOutput,
 )
 
-class State(LanggraphState):
+class State(BaseModel):
     """State for the Software Design Architecture workflow."""
     
     # Initial inputs

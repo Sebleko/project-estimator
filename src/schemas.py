@@ -190,6 +190,12 @@ class ImprovedSystemOutput(BaseModel):
         for component in self.components:
             if component.name not in self.system_description:
                 raise ValueError(f"Component {component.name} is not mentioned in the system description")
+        
+        components_found = re.findall(r'[A-Z]+', self.system_description)
+        components_found = list(set(components_found))
+        for component in components_found:
+            if component not in [c.name for c in self.components]:
+                raise ValueError(f"Component {component} is missing from the component descriptions")
         return self
 
 # 7. Schema for Final Architecture Assessment
@@ -248,4 +254,11 @@ class RefinedArchitectureOutput(BaseModel):
         for component in self.components:
             if component.name not in self.system_description:
                 raise ValueError(f"Component {component.name} is not mentioned in the system description")
+        
+        components_found = re.findall(r'[A-Z]+', self.system_description)
+        components_found = list(set(components_found))
+        for component in components_found:
+            if component not in [c.name for c in self.components]:
+                raise ValueError(f"Component {component} is missing from the component descriptions")
+        return self
         return self
