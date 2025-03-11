@@ -261,4 +261,3 @@ class RefinedArchitectureOutput(BaseModel):
             if component not in [c.name for c in self.components]:
                 raise ValueError(f"Component {component} is missing from the component descriptions")
         return self
-        return self
