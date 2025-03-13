@@ -46,7 +46,7 @@ Your task is to integrate these answers into the final requirements and user sto
 {format_instructions}
 """
 
-system_description_format = """
+system_description_format_old = """
 The system architecture is described in terms of components and their interactions.
 The system description outlines what components exist and how they interact to produce the full system. 
 The component descriptions provide technical details about each component. 
@@ -63,13 +63,14 @@ Example overly simple component description:
 DATABASE is responsible for storing data in a structured manner. It uses a relational database management system.
 """
 
+system_description_format = """
+
+"""
 # Initial System Design Prompt (for first design without validation feedback)
 initial_design_prompt = """
 You are designing the initial system architecture for a software project.
 Your approach is top-down, breaking the system into components that will be refined iteratively.
-This is the first architectural design based on the project requirements and user stories.
 
-""" + system_description_format + """
 
 **Project Description:**
 {project_description}
@@ -81,11 +82,9 @@ This is the first architectural design based on the project requirements and use
 {user_stories}
 
 **Instructions:**
-1. Create an initial system design description based on the project materials. Mark components in CAPITAL LETTERS.
-2. Provide component descriptions with technical details for each component.
-3. Include considerations for both functional requirements (core features) and non-functional requirements (security, performance, scalability).
-4. Focus on a clean separation of concerns between components.
-5. Document key architectural decisions and their rationale.
+1. First reason about the system at a high level, which architectural choices are best suited for the project. Keep it programming language agnostic for now. 
+2. Create an initial system design description based on the project info you have. Remember to rigorously justify each design choice based on the project requirements, user stories or general best practices.
+
 
 {format_instructions}
 """

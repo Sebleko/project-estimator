@@ -7,6 +7,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.types import interrupt, Command
 import tiktoken
 from langgraph.checkpoint.memory import MemorySaver
+from knowledge_graph import KnowledgeGraph
 
 
 from state import State, save_design_snapshot, increment_iteration, log_error
@@ -124,7 +125,7 @@ async def integrate_customer_answers(state: State) -> State:
         )
         
         # Update state
-        new_state = state.copy()
+        new_state = state.model_copy()
         new_state.generated_project_description = output.project_description
         new_state.requirements = output.requirements
         new_state.user_stories = output.user_stories
@@ -132,6 +133,23 @@ async def integrate_customer_answers(state: State) -> State:
         return new_state
     except Exception as e:
         error_msg = f"Error integrating customer answers: {str(e)}"
+        return log_error(state, error_msg)
+    
+async def initialize_knowledge_graph(state: State) -> State:
+    try:
+        kg = KnowledgeGraph()
+        await asyncio.gather(
+            kg.generalDescription(state.generated_project_description),
+            *[kg.addUserStory() for story in state.user_stories], 
+            *[kg.addRequirement() for requirement in state.requirements]
+        )
+
+        new_state = state.model_copy()
+        new_state.knowledge_graph = kg
+        return new_state
+
+    except Exception as e:
+        error_msg = f"Error initializing knowledge graph: {str(e)}"
         return log_error(state, error_msg)
 
 async def create_initial_system_design(state: State) -> State:
@@ -153,7 +171,7 @@ async def create_initial_system_design(state: State) -> State:
         )
         
         # Update state
-        new_state = state.copy()
+        new_state = state.model_copy()
         new_state.system_description = output.system_description
         new_state.components = output.components
         
@@ -391,7 +409,7 @@ async def refine_architecture(state: State) -> State:
 def check_if_clarification_needed(state: State) -> str:
     """Determine if clarification questions need to be asked."""
     if state.error_log:
-        return "end"  # End on errors
+        return "error"  # End on errors
     if state.clarification_questions:
         return "clarification"
     else:
@@ -400,7 +418,7 @@ def check_if_clarification_needed(state: State) -> str:
 def check_component_refinement_loop(state: State) -> str:
     """Determine if component refinement should continue."""
     if state.error_log:
-        return "end"  # End on errors
+        return "error"  # End on errors
     
     # Continue if the architect recommends it AND we haven't hit the max iterations
     if (state.needs_further_refinement and 
@@ -412,7 +430,7 @@ def check_component_refinement_loop(state: State) -> str:
 def check_validation_results(state: State) -> str:
     """Determine next step based on validation results."""
     if state.error_log:
-        return "end"  # End on errors
+        return "error"  # End on errors
     
     # Verify we have validation results for all user stories
     story_keys = {story.formatted() for story in state.user_stories}
@@ -422,7 +440,7 @@ def check_validation_results(state: State) -> str:
     if not validation_keys.issuperset(story_keys):
         missing = story_keys - validation_keys
         state = log_error(state, f"Missing validation results for stories: {missing}")
-        return "end"
+        return "error"
     
     # Check if any stories are unsatisfied
     any_unsatisfied = any(
@@ -438,7 +456,7 @@ def check_validation_results(state: State) -> str:
 def check_system_improvement_loop(state: State) -> str:
     """Determine next step after system improvement."""
     if state.error_log:
-        return "end"  # End on errors
+        return "error"  # End on errors
     
     # After improvement, if architect recommends more improvements and we haven't hit limit
     if (state.needs_further_refinement and 
@@ -450,12 +468,12 @@ def check_system_improvement_loop(state: State) -> str:
 def check_architecture_outcome(state: State) -> str:
     """Unified function to determine next step after assessment or refinement."""
     if state.error_log:
-        return "end"  # End on errors
+        return "error"  # End on errors
     
     # If no assessment result, exit with error
     if not state.assessment_result:
         state = log_error(state, "Missing assessment result")
-        return "end"
+        return "error"
     
     # If architecture needs refinement and we haven't hit the limit
     if (state.needs_further_refinement and 
@@ -466,7 +484,7 @@ def check_architecture_outcome(state: State) -> str:
         if (state.needs_further_refinement and 
             state.iterations["architecture_refinement"] >= 2):
             state = log_error(state, "Hit maximum architecture refinement iterations but still needs work")
-        return "end"
+        return "error"
 
 # Build the workflow graph
 def build_architecture_design_graph():
@@ -478,12 +496,13 @@ def build_architecture_design_graph():
     # Add nodes
     workflow.add_node("initial_requirements", process_initial_requirements)
     workflow.add_node("integrate_answers", integrate_customer_answers)
+    workflow.add_node("initialize_kg", initialize_knowledge_graph)
     workflow.add_node("initial_design", create_initial_system_design)
-    workflow.add_node("refine_components", refine_components)
-    workflow.add_node("validate_stories", validate_user_stories)
-    workflow.add_node("improve_system", improve_system)
-    workflow.add_node("final_assessment", assess_architecture)
-    workflow.add_node("refine_architecture", refine_architecture)
+    # workflow.add_node("refine_components", refine_components)
+    # workflow.add_node("validate_stories", validate_user_stories)
+    # workflow.add_node("improve_system", improve_system)
+    # workflow.add_node("final_assessment", assess_architecture)
+    # workflow.add_node("refine_architecture", refine_architecture)
     
     # Add conditional edges with error handling
     workflow.add_conditional_edges(
@@ -491,77 +510,80 @@ def build_architecture_design_graph():
         check_if_clarification_needed,
         {
             "clarification": "integrate_answers",
-            "initial_design": "initial_design",
-            "end": END  # Terminal state
+            "initial_design": "initialize_kg",
+            "error": END  # Terminal state
         }
     )
     
     workflow.add_conditional_edges(
         "integrate_answers",
-        lambda state: "end" if state.error_log else "initial_design",
+        lambda state: "error" if state.error_log else "initial_design",
         {
-            "initial_design": "initial_design",
-            "end": END
+            "initial_design": "initialize_kh",
+            "error": END
         }
     )
+
+    workflow.addEdge("initialize_kg", "initial_design")
+    workflow.add_edge("initial_design", END)
     
-    workflow.add_conditional_edges(
-        "initial_design",
-        lambda state: "end" if state.error_log else "refine_components",
-        {
-            "refine_components": "refine_components",
-            "end": END
-        }
-    )
+    # workflow.add_conditional_edges(
+    #     "initial_design",
+    #     lambda state: "error" if state.error_log else "refine_components",
+    #     {
+    #         "refine_components": "refine_components",
+    #         "error": END
+    #     }
+    # )
     
-    workflow.add_conditional_edges(
-        "refine_components",
-        check_component_refinement_loop,
-        {
-            "refine_components": "refine_components",
-            "validate_stories": "validate_stories",
-            "end": END
-        }
-    )
+    # workflow.add_conditional_edges(
+    #     "refine_components",
+    #     check_component_refinement_loop,
+    #     {
+    #         "refine_components": "refine_components",
+    #         "validate_stories": "validate_stories",
+    #         "error": END
+    #     }
+    # )
     
-    workflow.add_conditional_edges(
-        "validate_stories",
-        check_validation_results,
-        {
-            "improve_system": "improve_system",
-            "final_assessment": "final_assessment",
-            "end": END
-        }
-    )
+    # workflow.add_conditional_edges(
+    #     "validate_stories",
+    #     check_validation_results,
+    #     {
+    #         "improve_system": "improve_system",
+    #         "final_assessment": "final_assessment",
+    #         "error": END
+    #     }
+    # )
     
-    workflow.add_conditional_edges(
-        "improve_system",
-        check_system_improvement_loop,
-        {
-            "improve_system": "improve_system",
-            "validate_stories": "validate_stories",
-            "end": END
-        }
-    )
+    # workflow.add_conditional_edges(
+    #     "improve_system",
+    #     check_system_improvement_loop,
+    #     {
+    #         "improve_system": "improve_system",
+    #         "validate_stories": "validate_stories",
+    #         "error": END
+    #     }
+    # )
     
-    workflow.add_conditional_edges(
-        "final_assessment",
-        check_architecture_outcome,
-        {
-            "refine_architecture": "refine_architecture",
-            "end": END
-        }
-    )
+    # workflow.add_conditional_edges(
+    #     "final_assessment",
+    #     check_architecture_outcome,
+    #     {
+    #         "refine_architecture": "refine_architecture",
+    #         "error": END
+    #     }
+    # )
     
-    workflow.add_conditional_edges(
-        "refine_architecture", 
-        lambda state: check_validation_results(state) if not state.error_log else "end",
-        {
-            "improve_system": "improve_system", 
-            "final_assessment": "final_assessment",
-            "end": END
-        }
-    )
+    # workflow.add_conditional_edges(
+    #     "refine_architecture", 
+    #     lambda state: check_validation_results(state) if not state.error_log else "error",
+    #     {
+    #         "improve_system": "improve_system", 
+    #         "final_assessment": "final_assessment",
+    #         "error": END
+    #     }
+    # )
     
     # Set the entry point
     workflow.set_entry_point("initial_requirements")

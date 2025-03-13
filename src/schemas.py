@@ -77,29 +77,16 @@ class Component(BaseModel):
     )
 
 class InitialSystemDesignOutput(BaseModel):
-    system_description: str = Field(
+    
+    reasoning: str = Field(
         ...,
-        description="Narrative description of the overall system, its components and their interactions, with components in CAPITAL LETTERS"
-    )
-    components: List[Component] = Field(
-        ...,
-        description="Detailed descriptions of each component mentioned in the system description"
+        description="High-level reasoning about architectural choices best suited for the project"
     )
     
-    @model_validator(mode='after')
-    def validate_components(self) -> 'InitialSystemDesignOutput':
-        """Validate that all component names appear in the system description and that all components are described."""
-        for component in self.components:
-            if component.name not in self.system_description:
-                raise ValueError(f"Component {component.name} is not mentioned in the system description")
-            
-        # Regex to find all components in the system description
-        components_found = re.findall(r'[A-Z]+', self.system_description)
-        components_found = list(set(components_found))
-        for component in components_found:
-            if component not in [c.name for c in self.components]:
-                raise ValueError(f"Component {component} is missing from the component descriptions")
-        return self
+    system_description: str = Field(
+        ...,
+        description="Narrative description of the overall system, its components and their interactions"
+    )
 
 # 4. Schema for Component Refinement
 class RefinedComponentsOutput(BaseModel):
