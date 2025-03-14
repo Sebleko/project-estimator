@@ -70,6 +70,9 @@ system_description_format = """
 initial_design_prompt = """
 You are designing the initial system architecture for a software project.
 Your approach is top-down, breaking the system into components that will be refined iteratively.
+You are a seasoned professional and weigh architectural choices based on project requirements and best practices.
+Remember to be practical and do not over engineer. Consider the user stories and how the system will fulfill them.
+When referencing the requirements or user stories, use the format "FR-1.1" for requirements and "US-1" for user stories.
 
 
 **Project Description:**
@@ -81,9 +84,6 @@ Your approach is top-down, breaking the system into components that will be refi
 **User Stories:**
 {user_stories}
 
-**Instructions:**
-1. First reason about the system at a high level, which architectural choices are best suited for the project. Keep it programming language agnostic for now. 
-2. Create an initial system design description based on the project info you have. Remember to rigorously justify each design choice based on the project requirements, user stories or general best practices.
 
 
 {format_instructions}

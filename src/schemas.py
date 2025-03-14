@@ -76,17 +76,56 @@ class Component(BaseModel):
         description="Optional list of suggested technologies or standards for implementing this component"
     )
 
+class ComponentLink(BaseModel):
+    first_component: str = Field(..., description="Name of first component in the link"),
+    second_component: str = Field(..., description="Name of second component in the link"),
+    description: str = Field(..., description="Description of the purpose or nature of the link")
+
+class UserStoryComponentLink(BaseModel):
+    user_story: str = Field(..., description="The identifier of the user story"),
+    components: List[str] = Field(..., description="List of components involved in fulfilling the user story")
+
+class RequirementComponentLink(BaseModel):
+    requirement: str = Field(..., description="The identifier of the requirement"),
+    components: List[str] = Field(..., description="List of components that address the requirement. Use component names.")
+
+class ArchitectureDesignChoices(BaseModel):
+    id: str = Field(..., description="Unique identifier for the design choice"),
+    description: str = Field(..., description="Description of the design choice"),
+    rationale: str = Field(..., description="Reasoning behind the design choice. Use identifiers."),
+
+class DesignChoiceRequirementLink(BaseModel):
+    design_choice: str = Field(..., description="The identifier of the design choice"),
+    requirements: List[str] = Field(..., description="List of requirements that influenced this design choice. Can be empty. Use identifiers.")
+
 class InitialSystemDesignOutput(BaseModel):
-    
-    reasoning: str = Field(
-        ...,
-        description="High-level reasoning about architectural choices best suited for the project"
-    )
-    
-    system_description: str = Field(
-        ...,
-        description="Narrative description of the overall system, its components and their interactions"
-    )
+    architecture_design: str = Field(
+        None,
+        description="A description of the architecture design choices made and the reasons behind them."
+    ),
+    component_description: str = Field(
+        None,
+        description="Narrative description of the overall system, its components and their interactions. The components should be in CAPITAL LETTERS."
+    ),
+    interfaces_between_components: str = Field(
+        None,
+        description="Description of how the components interact with each other. How do they interface with each other."
+    ),
+    architecture_choices: List[ArchitectureDesignChoices] = Field(
+        None, 
+        description="List of design choices made during the architecture design process"
+    ),
+    components: List[Component] = Field(
+        None,
+        description="List of components with detailed descriptions."
+    ),
+    component_links: List[ComponentLink] = Field(
+        None,
+        description="List of links between components and their descriptions"
+    ),
+"""     user_stories_to_components: List = Field(),
+    requirements_to_components: List = Field(),
+    design_choices_to_requirements: List = Field(), """
 
 # 4. Schema for Component Refinement
 class RefinedComponentsOutput(BaseModel):
